@@ -3,15 +3,16 @@ use std::{
     time::Instant,
 };
 
-use nannou::prelude::*;
+use nannou::{
+    prelude::*,
+    state::{mouse::ButtonPosition, Mouse},
+};
 
 pub struct Model<const GRID_SIZE: usize> {
     active: Grid<GRID_SIZE>,
     rules: Vec<Rule>,
     last: Instant,
     paused: bool,
-    mouse_pressed: bool,
-    last_pos: Option<Point2>,
     drag_list: Vec<(usize, usize)>,
 }
 
@@ -135,38 +136,30 @@ impl<const GRID_SIZE: usize> Model<GRID_SIZE> {
             rules,
             last: Instant::now(),
             paused,
-            mouse_pressed: false,
-            last_pos: Default::default(),
             drag_list: Default::default(),
         }
     }
 }
 
 pub fn event<const GRID_SIZE: usize>(app: &App, model: &mut Model<GRID_SIZE>, event: Event) {
+    if let ButtonPosition::Down(_) = app.mouse.buttons.left() {
+        update_grid(
+            &app.main_window().rect(),
+            model,
+            &Point2::new(app.mouse.x, app.mouse.y),
+        );
+    }
     match event {
         Event::WindowEvent {
             simple: Some(event),
             ..
         // clicking or tapping in a cell to swap it's 'fullness'
         } => match event {
-            MousePressed(_) => {
-                if let Some(last_pos) =  model.last_pos.clone() {
-                    update_grid(&app.main_window().rect(), model, &last_pos);
-                }
-                model.mouse_pressed = true
-            }
             MouseReleased(_) => {
                 model.drag_list.clear();
-                model.mouse_pressed = false;
             },
             Touch(touch_event) => {
                 update_grid(&app.main_window().rect(), model, &touch_event.position)
-            }
-            MouseMoved(pos) => {
-                if model.mouse_pressed {
-                    update_grid(&app.main_window().rect(), model, &pos);
-                }
-                model.last_pos = Some(pos);
             }
             KeyPressed(key) => {
                 match key {
@@ -182,11 +175,11 @@ pub fn event<const GRID_SIZE: usize>(app: &App, model: &mut Model<GRID_SIZE>, ev
 }
 
 // changes the state of the cell that was interacted with
-fn update_grid<const GRID_SIZE: usize>(win: &Rect, model: &mut Model<GRID_SIZE>, win_pos: &Point2) {
+fn update_grid<const GRID_SIZE: usize>(win: &Rect, model: &mut Model<GRID_SIZE>, pos: &Point2) {
     let w = win.x.len() / (GRID_SIZE as f32);
     let h = win.y.len() / (GRID_SIZE as f32);
-    let x = ((win_pos.x - win.x.start) / w) as usize;
-    let y = ((win.y.end - win_pos.y) / h) as usize;
+    let x = ((pos.x - win.x.start) / w) as usize;
+    let y = ((win.y.end - pos.y) / h) as usize;
     if !model.drag_list.contains(&(x, y)) {
         model.active[(x, y)] = match model.active[(x, y)] {
             State::Full => State::Empty,

@@ -1,7 +1,7 @@
 use cellular_automaton::*;
 
 fn main() {
-    nannou::app(|app| Model::<50>::model(app, None, game_of_life(), false))
+    nannou::app(|app| Model::<50>::model(app, None, falling_sand(), false))
         .update(update)
         .event(event)
         .simple_window(view)
