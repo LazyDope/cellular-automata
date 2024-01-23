@@ -4,8 +4,9 @@ use std::{
 };
 
 use nannou::{
-    prelude::*,
-    state::{mouse::ButtonPosition, Mouse},
+    color::encoding::Srgb,
+    prelude::{rgb::Rgb, *},
+    state::mouse::ButtonPosition,
 };
 
 pub struct Model<const GRID_SIZE: usize> {
@@ -13,7 +14,7 @@ pub struct Model<const GRID_SIZE: usize> {
     rules: Vec<Rule>,
     last: Instant,
     paused: bool,
-    drag_list: Vec<(usize, usize)>,
+    fill_state: State,
 }
 
 #[derive(Clone)]
@@ -68,6 +69,31 @@ impl<const GRID_SIZE: usize> Default for Grid<GRID_SIZE> {
 pub enum State {
     Full,
     Empty,
+}
+
+impl State {
+    fn color(&self) -> Rgb<Srgb, u8> {
+        match self {
+            State::Full => WHITE,
+            State::Empty => BLACK,
+        }
+    }
+
+    fn next(self) -> Self {
+        use State::*;
+        match self {
+            Full => Empty,
+            Empty => Full,
+        }
+    }
+
+    fn prev(self) -> Self {
+        use State::*;
+        match self {
+            Full => Empty,
+            Empty => Full,
+        }
+    }
 }
 
 impl std::fmt::Debug for State {
@@ -136,7 +162,7 @@ impl<const GRID_SIZE: usize> Model<GRID_SIZE> {
             rules,
             last: Instant::now(),
             paused,
-            drag_list: Default::default(),
+            fill_state: Default::default(),
         }
     }
 }
@@ -155,9 +181,6 @@ pub fn event<const GRID_SIZE: usize>(app: &App, model: &mut Model<GRID_SIZE>, ev
             ..
         // clicking or tapping in a cell to swap it's 'fullness'
         } => match event {
-            MouseReleased(_) => {
-                model.drag_list.clear();
-            },
             Touch(touch_event) => {
                 update_grid(&app.main_window().rect(), model, &touch_event.position)
             }
@@ -165,6 +188,23 @@ pub fn event<const GRID_SIZE: usize>(app: &App, model: &mut Model<GRID_SIZE>, ev
                 match key {
                     Key::P => model.paused = !model.paused,
                     Key::C => model.active = Default::default(),
+                    _ => (),
+                }
+            }
+            MouseWheel(delta, phase) => {
+                match phase {
+                    TouchPhase::Moved => match delta {
+                        MouseScrollDelta::LineDelta(_, y) => if y > 0. {
+                            model.fill_state = model.fill_state.next();
+                        } else if y < 0. {
+                            model.fill_state = model.fill_state.prev();
+                        },
+                        MouseScrollDelta::PixelDelta(pos) => if pos.y > 0. {
+                            model.fill_state = model.fill_state.next();
+                        } else if pos.y < 0. {
+                            model.fill_state = model.fill_state.prev();
+                        },
+                    },
                     _ => (),
                 }
             }
@@ -180,13 +220,8 @@ fn update_grid<const GRID_SIZE: usize>(win: &Rect, model: &mut Model<GRID_SIZE>,
     let h = win.y.len() / (GRID_SIZE as f32);
     let x = ((pos.x - win.x.start) / w) as usize;
     let y = ((win.y.end - pos.y) / h) as usize;
-    if !model.drag_list.contains(&(x, y)) {
-        model.active[(x, y)] = match model.active[(x, y)] {
-            State::Full => State::Empty,
-            State::Empty => State::Full,
-        };
-        model.drag_list.push((x, y));
-    }
+    model.active[(x.min(GRID_SIZE - 1).max(0), y.min(GRID_SIZE - 1).max(0))] =
+        model.fill_state.clone();
 }
 
 pub fn update<const GRID_SIZE: usize>(_app: &App, model: &mut Model<GRID_SIZE>, _update: Update) {
@@ -322,9 +357,12 @@ fn draw_grid<const GRID_SIZE: usize>(draw: &Draw, win: &Rect, model: &Model<GRID
             .w_h(w, h)
             .stroke_weight(0.5)
             .stroke(GRAY)
-            .color(match cell {
-                State::Full => WHITE,
-                State::Empty => BLACK,
-            });
+            .color(cell.color());
     }
+    draw.rect()
+        .x_y(x0 + w / 2., y0 - h / 2.)
+        .w_h(w.min(h), w.min(h))
+        .stroke_weight(0.5)
+        .stroke(GRAY)
+        .color(model.fill_state.color());
 }
