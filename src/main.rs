@@ -86,6 +86,7 @@ fn model(_app: &App) -> Model {
     Model {
         active,
         rules: vec![Rule::Axial {
+            // if there is a full cell above an empty cell, swap them
             in_state: vec![vec![State::Full, State::Empty]],
             out_state: vec![vec![State::Empty, State::Full]],
         }],
@@ -99,6 +100,7 @@ fn event(app: &App, model: &mut Model, event: Event) {
         Event::WindowEvent {
             simple: Some(event),
             ..
+        // clicking or tapping in a cell to swap it's 'fullness'
         } => match event {
             MousePressed(_) if model.last_pos.is_some() => {
                 let last_pos = model.last_pos.clone().unwrap();
@@ -114,6 +116,7 @@ fn event(app: &App, model: &mut Model, event: Event) {
     }
 }
 
+// changes the state of the cell that was interacted with
 fn update_grid(win: &Rect, model: &mut Model, win_pos: &Point2) {
     let w = win.x.len() / (GRID_SIZE as f32);
     let h = win.y.len() / (GRID_SIZE as f32);
@@ -139,67 +142,94 @@ fn update(_app: &App, model: &mut Model, _update: Update) {
                     Rule::Axial {
                         in_state,
                         out_state,
-                    } => {
-                        if in_state
-                            .iter()
-                            .enumerate()
-                            .flat_map(|(ri, rule_col)| {
-                                rule_col
-                                    .iter()
-                                    .enumerate()
-                                    .map(move |(rj, rule_cell)| (ri, rj, rule_cell))
-                            })
-                            .all(|(ri, rj, rule_cell)| {
-                                model.active.get(i + ri).is_some_and(|col| {
-                                    col.get(j + rj).is_some_and(|cell| cell == rule_cell)
-                                })
-                            })
-                        {
-                            for (ri, rj, state) in
-                                out_state.iter().enumerate().flat_map(|(ri, out_col)| {
-                                    out_col
-                                        .iter()
-                                        .enumerate()
-                                        .map(move |(rj, state)| (ri, rj, state))
-                                })
-                            {
-                                inactive[i + ri][j + rj] = state.clone();
-                            }
-                        }
-                    }
+                    } => model.axial((i, j), &mut inactive, in_state, out_state),
                     Rule::Radial {
                         current_state,
                         surroundings,
                         final_state,
-                    } => {
-                        if current_state == cell {
-                            let cells: Vec<_> = (-1i64..=1)
-                                .flat_map(|ri| {
-                                    (-1i64..=1).map(move |rj| (ri, rj)).map(|(ri, rj)| {
-                                        model
-                                            .active
-                                            .get((i as i64 + ri) as usize)
-                                            .map(|col| col.get((j as i64 + rj) as usize))
-                                            .flatten()
-                                    })
-                                })
-                                .filter_map(|cell| cell)
-                                .collect();
-                            if surroundings.iter().all(|(count, req_state, comp)| {
-                                comp.compare(
-                                    *count,
-                                    cells.iter().filter(|val| val == &&req_state).count(),
-                                )
-                            }) {
-                                inactive[i][j] = final_state.clone();
-                            }
-                        }
-                    }
+                    } => model.radial(
+                        &cell,
+                        (i, j),
+                        &mut inactive,
+                        current_state,
+                        surroundings,
+                        final_state,
+                    ),
                 }
             }
         }
     }
     model.active = inactive;
+}
+
+impl Model {
+    fn radial(
+        &self,
+        cell: &State,
+        cell_cords: (usize, usize),
+        inactive: &mut [[State; GRID_SIZE]; GRID_SIZE],
+        current_state: &State,
+        surroundings: &[(usize, State, Comparison)],
+        final_state: &State,
+    ) {
+        if current_state == cell {
+            let cells: Vec<_> = (-1i64..=1)
+                .flat_map(|ri| {
+                    (-1i64..=1).map(move |rj| (ri, rj)).map(|(ri, rj)| {
+                        self.active
+                            .get((cell_cords.0 as i64 + ri) as usize)
+                            .map(|col| col.get((cell_cords.1 as i64 + rj) as usize))
+                            .flatten()
+                    })
+                })
+                .filter_map(|cell| cell)
+                .collect();
+            if surroundings.iter().all(|(count, req_state, comp)| {
+                comp.compare(
+                    *count,
+                    cells.iter().filter(|val| val == &&req_state).count(),
+                )
+            }) {
+                inactive[cell_cords.0][cell_cords.1] = final_state.clone();
+            }
+        }
+    }
+
+    fn axial(
+        &self,
+        cell_cords: (usize, usize),
+        inactive: &mut [[State; GRID_SIZE]; GRID_SIZE],
+        in_state: &Vec<Vec<State>>,
+        out_state: &Vec<Vec<State>>,
+    ) {
+        // check all the states relative to the given cell
+        if in_state
+            .iter()
+            .enumerate()
+            .flat_map(|(ri, rule_col)| {
+                rule_col
+                    .iter()
+                    .enumerate()
+                    .map(move |(rj, rule_cell)| (ri, rj, rule_cell))
+            })
+            .all(|(ri, rj, rule_cell)| {
+                self.active.get(cell_cords.0 + ri).is_some_and(|col| {
+                    col.get(cell_cords.1 + rj)
+                        .is_some_and(|cell| cell == rule_cell)
+                })
+            })
+        {
+            // if cells match expected, perform the swaps to the new layout
+            for (ri, rj, state) in out_state.iter().enumerate().flat_map(|(ri, out_col)| {
+                out_col
+                    .iter()
+                    .enumerate()
+                    .map(move |(rj, state)| (ri, rj, state))
+            }) {
+                inactive[cell_cords.0 + ri][cell_cords.1 + rj] = state.clone();
+            }
+        }
+    }
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
