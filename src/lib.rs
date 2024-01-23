@@ -3,7 +3,7 @@ use std::{
     time::Instant,
 };
 
-use nannou::{color::DefaultScalar, prelude::*};
+use nannou::prelude::*;
 
 pub struct Model<const GRID_SIZE: usize> {
     active: Grid<GRID_SIZE>,
